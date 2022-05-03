@@ -59,16 +59,50 @@ namespace AssetStudio
 
         public static FileType CheckFileType(Stream stream, out EndianBinaryReader reader)
         {
+            if (IsZstd(stream))
+            {
+                var decompressor = new ZstdNet.Decompressor();
+                var data = decompressor.Unwrap(GetBytes(stream));
+                stream.Dispose();
+                stream = new MemoryStream(data, false);
+            }
             reader = new EndianBinaryReader(stream);
             return CheckFileType(reader);
         }
 
         public static FileType CheckFileType(string fileName, out EndianBinaryReader reader)
         {
-            reader = new EndianBinaryReader(File.Open(fileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
-            return CheckFileType(reader);
+            var stream = File.Open(fileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return CheckFileType(stream, out reader);
         }
 
+        private static readonly byte[] zstdMagic = { 0x28, 0xB5, 0x2F, 0xFD };
+        private static bool IsZstd(Stream stream)
+        {
+            var magic = new byte[zstdMagic.Length];
+            stream.Read(magic, 0, magic.Length);
+            stream.Seek(0, SeekOrigin.Begin);
+            return zstdMagic.SequenceEqual(magic);
+        }
+        
+        private static byte[] GetBytes(Stream stream)
+        {
+            int len = (int)stream.Length;
+            int pos = 0;
+
+            var bytes = new byte[len];
+
+            while (len > 0)
+            {
+                int n = stream.Read(bytes, pos, len);
+                if (n == 0)
+                    break;
+                pos += n;
+                len -= n;
+            }
+            return bytes;
+        }
+        
         private static FileType CheckFileType(EndianBinaryReader reader)
         {
             var signature = reader.ReadStringToNull(20);
